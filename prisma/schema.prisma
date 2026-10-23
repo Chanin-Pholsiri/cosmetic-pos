@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── ผู้ใช้งานและสิทธิ์ ──────────────────────────────
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+model User {
+  id           String          @id @default(cuid())
+  username     String          @unique
+  email        String?         @unique // ใช้ login
+  phone        String?         @unique // ใช้ login
+  passwordHash String
+  name         String
+  role         Role            @default(STAFF)
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  sessions     Session[]
+  sales        Sale[]
+  stockMoves   StockMovement[]
+  sessionUses  SessionUsage[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ── ลูกค้า (Member) ────────────────────────────────
+
+model Member {
+  id           String             @id @default(cuid())
+  code         String             @unique
+  name         String
+  phone        String?            @unique // อาจว่างชั่วคราวสำหรับบัญชีที่สมัครผ่าน Google
+  email        String?            @unique
+  passwordHash String? // ว่าง = ยังไม่มีบัญชีออนไลน์ หรือใช้ Google login
+  googleId     String?            @unique
+  birthDate    DateTime?
+  points       Int                @default(0)
+  notes        String?
+  createdAt    DateTime           @default(now())
+  sales        Sale[]
+  enrollments  CourseEnrollment[]
+  appointments Appointment[]
+  sessions     MemberSession[]
+}
+
+model MemberSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ── สินค้าและหมวดหมู่ ───────────────────────────────
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  products Product[]
+}
+
+model Product {
+  id            String          @id @default(cuid())
+  sku           String          @unique
+  name          String
+  categoryId    String?
+  category      Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  price         Decimal         @db.Decimal(10, 2)
+  cost          Decimal         @default(0) @db.Decimal(10, 2)
+  stockQty      Int             @default(0)
+  lowStockAlert Int             @default(5)
+  active        Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  saleItems     SaleItem[]
+  stockMoves    StockMovement[]
+}
+
+// ── คอร์สทรีตเมนต์ / แพ็กเกจ ─────────────────────────
+
+model Course {
+  id            String             @id @default(cuid())
+  code          String             @unique
+  name          String
+  description   String?
+  price         Decimal            @db.Decimal(10, 2)
+  totalSessions Int                @default(1)
+  validityDays  Int?
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  saleItems     SaleItem[]
+  enrollments   CourseEnrollment[]
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+}
+
+model CourseEnrollment {
+  id            String           @id @default(cuid())
+  memberId      String
+  member        Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  courseId      String
+  course        Course           @relation(fields: [courseId], references: [id])
+  saleId        String?
+  sale          Sale?            @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  totalSessions Int
+  usedSessions  Int              @default(0)
+  expiresAt     DateTime?
+  status        EnrollmentStatus @default(ACTIVE)
+  createdAt     DateTime         @default(now())
+  usages        SessionUsage[]
+  appointments  Appointment[]
+}
+
+// ── นัดหมายเข้ารับบริการ ─────────────────────────────
+
+enum AppointmentStatus {
+  SCHEDULED // นัดแล้ว รอยืนยัน
+  CONFIRMED // ลูกค้ายืนยันแล้ว
+  COMPLETED // เข้ารับบริการแล้ว
+  CANCELLED // ยกเลิก
+}
+
+model Appointment {
+  id           String            @id @default(cuid())
+  enrollmentId String
+  enrollment   CourseEnrollment  @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  memberId     String
+  member       Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  scheduledAt  DateTime
+  status       AppointmentStatus @default(SCHEDULED)
+  note         String?
+  createdAt    DateTime          @default(now())
+}
+
+model SessionUsage {
+  id           String           @id @default(cuid())
+  enrollmentId String
+  enrollment   CourseEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  note         String?
+  usedAt       DateTime         @default(now())
+}
+
+// ── การขาย / ใบเสร็จ ────────────────────────────────
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  PROMPTPAY
+  CREDIT_CARD
+}
+
+enum SaleChannel {
+  POS
+  ONLINE
+}
+
+enum PaymentType {
+  FULL
+  INSTALLMENT
+}
+
+model Sale {
+  id              String             @id @default(cuid())
+  receiptNo       String             @unique
+  memberId        String?
+  member          Member?            @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  userId          String?
+  user            User?              @relation(fields: [userId], references: [id])
+  subtotal        Decimal            @db.Decimal(10, 2)
+  discount        Decimal            @default(0) @db.Decimal(10, 2)
+  total           Decimal            @db.Decimal(10, 2)
+  paymentMethod   PaymentMethod      @default(CASH)
+  channel         SaleChannel        @default(POS)
+  paymentType     PaymentType        @default(FULL)
+  createdAt       DateTime           @default(now())
+  items           SaleItem[]
+  enrollments     CourseEnrollment[]
+  installmentPlan InstallmentPlan?
+}
+
+// ── ผ่อนชำระ ────────────────────────────────────────
+
+enum InstallmentStatus {
+  PENDING
+  PAID
+}
+
+model InstallmentPlan {
+  id           String        @id @default(cuid())
+  saleId       String        @unique
+  sale         Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  totalAmount  Decimal       @db.Decimal(10, 2)
+  count        Int
+  createdAt    DateTime      @default(now())
+  installments Installment[]
+}
+
+model Installment {
+  id            String            @id @default(cuid())
+  planId        String
+  plan          InstallmentPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  seq           Int
+  amount        Decimal           @db.Decimal(10, 2)
+  dueDate       DateTime
+  paidAt        DateTime?
+  paymentMethod PaymentMethod?
+  status        InstallmentStatus @default(PENDING)
+}
+
+enum SaleItemType {
+  PRODUCT
+  COURSE
+}
+
+model SaleItem {
+  id        String       @id @default(cuid())
+  saleId    String
+  sale      Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  itemType  SaleItemType
+  productId String?
+  product   Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  courseId  String?
+  course    Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  name      String
+  unitPrice Decimal      @db.Decimal(10, 2)
+  quantity  Int
+  total     Decimal      @db.Decimal(10, 2)
+}
+
+// ── สต๊อกสินค้า ─────────────────────────────────────
+
+enum StockMoveType {
+  RECEIVE
+  SALE
+  ADJUST
+  RETURN
+}
+
+model StockMovement {
+  id        String        @id @default(cuid())
+  productId String
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type      StockMoveType
+  quantity  Int
+  note      String?
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime      @default(now())
+}

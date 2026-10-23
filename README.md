@@ -1,36 +1,111 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Beauty POS — ระบบร้านเครื่องสำอางและคอร์สทรีตเมนต์
 
-## Getting Started
+Web Application สำหรับบริหารร้านขายเครื่องสำอางและคอร์สทรีตเมนต์ ครอบคลุมการขายหน้าร้าน (POS), ระบบสมาชิก, สต๊อกสินค้า, คอร์ส/แพ็กเกจ, ใบเสร็จ และรายงานยอดขาย
 
-First, run the development server:
+## Tech Stack
+
+| ส่วน | เทคโนโลยี |
+|---|---|
+| Frontend + Backend | Next.js 16 (App Router, TypeScript, Server Actions) |
+| UI | Tailwind CSS v4 — โทน Cream & Warm Brown |
+| Database | PostgreSQL 16 (รันบน Docker) |
+| ORM | Prisma 7 |
+| Auth | Session-based (cookie httpOnly) + สิทธิ์ ADMIN / STAFF |
+
+## โครงสร้างระบบ: 2 โซน
+
+### 🛍 หน้าร้านสำหรับลูกค้า
+- **ดูหน้าแรก/คอร์ส/สินค้าได้โดยไม่ต้อง login** — แต่การซื้อคอร์สและการดู/จัดการนัดหมายต้อง login สมาชิกก่อน
+- **บัญชีสมาชิก** — สมัครด้วย ชื่อ + เบอร์โทร + รหัสผ่าน (`/account/register`), เข้าสู่ระบบด้วยเบอร์โทร + รหัสผ่าน (`/account/login`) หรือ **Google Login** · ลูกค้าเก่าหน้าร้านสมัครด้วยเบอร์เดิมจะดึงแต้ม/คอร์สมาให้อัตโนมัติ
+- **ซื้อคอร์ส + จองคิว** — เลือกวันเวลาเข้ารับบริการครั้งแรก, จ่ายเต็มจำนวนหรือผ่อนรายเดือน (2–6 งวด งวดแรกชำระทันที) ผูกกับบัญชีที่ login
+- **นัดหมายของฉัน (`/my`)** — แจ้งเตือนนัดใกล้ถึง (48 ชม.), กดยืนยันเข้ารับบริการหรือขอเลื่อนนัด, ดูสิทธิ์คอร์สคงเหลือ, ตารางผ่อน + ยอดคงเหลือ (เห็นเฉพาะข้อมูลของตัวเอง)
+
+### 🔐 หลังร้าน `/admin` (ต้อง login)
+- **Login และสิทธิ์** — ADMIN (ทุกสิทธิ์) / STAFF (ขายและจัดการข้อมูล)
+- **ขายหน้าร้าน (POS)** — ขายสินค้า + คอร์สในบิลเดียว, ส่วนลด, จ่ายเต็ม/ผ่อนชำระ, 4 ช่องทางชำระเงิน
+- **นัดหมายบริการ** — แจ้งเตือนนัดใกล้ถึง/เลยกำหนด, ยืนยัน/เลื่อน/ยกเลิกนัด, บันทึก "เข้ารับบริการแล้ว" (ตัดสิทธิ์คอร์ส 1 ครั้ง) พร้อมกำหนดนัดครั้งถัดไปในขั้นตอนเดียว
+- **ผ่อนชำระ** — ตารางงวด วันครบกำหนด ยอดชำระแล้ว/คงเหลือ ไฮไลต์งวดเกินกำหนด ปุ่มรับชำระ (สะสมแต้มตามยอดจ่ายจริง)
+- **ลูกค้าสมาชิก** — ทะเบียนลูกค้า, แต้มสะสม (1 แต้ม/100 บาท), ประวัติการซื้อ, สิทธิ์คอร์ส
+- **คอร์สทรีตเมนต์** — จำนวนครั้ง, วันหมดอายุ, ตัดสิทธิ์การใช้รายครั้งพร้อมประวัติ
+- **สต๊อกสินค้า** — ตัดสต๊อกอัตโนมัติเมื่อขาย, รับเข้า/ปรับยอด/รับคืน, แจ้งเตือนใกล้หมด
+- **ใบเสร็จ** — เลขที่รันอัตโนมัติ (เช่น RC20260704-0001), สั่งพิมพ์ได้, แสดงตารางผ่อนถ้ามี
+- **รายงานยอดขาย** — รายวัน 14 วัน, สินค้าขายดี, ช่องทางชำระเงิน, สัดส่วนสินค้า/คอร์ส
+- **แดชบอร์ด** — ยอดขาย + แจ้งเตือนนัดใน 48 ชม. และงวดผ่อนเกินกำหนด
+
+> หมายเหตุ: การชำระเงินออนไลน์เป็นแบบเดโม (บันทึกเป็นชำระแล้วทันที) — ต่อ Payment Gateway จริง (เช่น Omise/Stripe/PromptPay API) ได้ภายหลัง และการแจ้งเตือนแสดงในหน้าเว็บ ยังไม่ส่ง SMS/LINE
+
+## เปิดใช้ Google Login
+
+1. ไปที่ [Google Cloud Console → APIs & Credentials](https://console.cloud.google.com/apis/credentials) สร้าง **OAuth client ID** (Web application)
+2. ตั้ง Authorized redirect URI: `http://localhost:3000/api/auth/google/callback` (production ใช้โดเมนจริง)
+3. ใส่ค่าใน `.env`:
+   ```
+   APP_URL="http://localhost:3000"
+   GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"
+   GOOGLE_CLIENT_SECRET="GOCSPX-xxx"
+   ```
+4. รีสตาร์ทเซิร์ฟเวอร์ — ปุ่ม "เข้าสู่ระบบด้วย Google" จะใช้งานได้ทันที (ก่อนตั้งค่า ปุ่มจะแสดงเป็นปิดใช้งาน)
+
+บัญชี Google ที่ login ครั้งแรกจะถูกสร้างเป็นสมาชิกใหม่อัตโนมัติ และระบบจะขอเบอร์โทรก่อนจองคิวครั้งแรก
+
+## วิธีติดตั้งและรัน
 
 ```bash
+# 1. ติดตั้ง dependencies
+npm install
+
+# 2. สตาร์ทฐานข้อมูล PostgreSQL (Docker)
+npm run db:up
+
+# 3. สร้างตารางและข้อมูลตัวอย่าง
+npm run db:migrate
+npm run db:seed
+
+# 4. รันเว็บ
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+เปิด http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### บัญชีทดสอบ
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| บัญชี | รหัสผ่าน | สิทธิ์ |
+|---|---|---|
+| `admin` | `admin1234` | ผู้ดูแลระบบ |
+| `staff` | `staff1234` | พนักงาน |
 
-## Learn More
+## โครงสร้างโปรเจกต์
 
-To learn more about Next.js, take a look at the following resources:
+```
+├── docker-compose.yml      # PostgreSQL 16 (host port 5433)
+├── prisma/
+│   ├── schema.prisma       # โครงสร้างฐานข้อมูลทั้งหมด
+│   └── seed.ts             # ข้อมูลตัวอย่าง
+├── src/
+│   ├── lib/                # db (Prisma), auth (session), format, installments
+│   ├── components/         # Sidebar
+│   └── app/
+│       ├── login/          # หน้าเข้าสู่ระบบ (พนักงาน)
+│       ├── (store)/        # 🛍 หน้าร้านลูกค้า (ไม่ต้อง login)
+│       │   ├── page.tsx        # หน้าแรก
+│       │   ├── treatments/     # คอร์สทั้งหมด + ซื้อ/จองคิว/ผ่อน
+│       │   └── my/             # นัดหมายของฉัน (เช็คด้วยเบอร์โทร)
+│       └── admin/          # 🔐 หลังร้าน (ต้อง login)
+│           ├── page.tsx        # แดชบอร์ด + แจ้งเตือน
+│           ├── pos/            # ขายหน้าร้าน (จ่ายเต็ม/ผ่อน)
+│           ├── appointments/   # นัดหมาย + บันทึกเข้ารับบริการ
+│           ├── installments/   # ผ่อนชำระ + รับชำระรายงวด
+│           ├── products/       # สินค้า + หมวดหมู่
+│           ├── courses/        # คอร์ส/แพ็กเกจ
+│           ├── members/        # ลูกค้าสมาชิก + ใช้สิทธิ์คอร์ส
+│           ├── stock/          # สต๊อก + การเคลื่อนไหว
+│           ├── sales/          # ประวัติการขาย + ใบเสร็จ
+│           ├── reports/        # รายงานยอดขาย
+│           └── users/          # ผู้ใช้งานระบบ (ADMIN เท่านั้น)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy (Production)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. ตั้งค่า `DATABASE_URL` และ `AUTH_SECRET` ใหม่ใน environment ของเซิร์ฟเวอร์
+2. `npx prisma migrate deploy`
+3. `npm run build && npm start`
